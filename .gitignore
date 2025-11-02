@@ -13,7 +13,6 @@ logs/
 
 # big artifact dirs
 ckpts/
-data/
 
 # misc
 *.ipynb_checkpoints/
