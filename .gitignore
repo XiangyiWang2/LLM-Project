@@ -18,3 +18,4 @@ data/
 # misc
 *.ipynb_checkpoints/
 .DS_Store
+!data/**
