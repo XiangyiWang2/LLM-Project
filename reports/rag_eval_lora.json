@@ -1,0 +1,10 @@
+{
+  "n": 50,
+  "Recall@k": 0.88,
+  "RerankHit@r": 0.68,
+  "AnswerHit": 0.64,
+  "top_k": 20,
+  "rerank_top": 5,
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "peft_path": "ckpts/qwen7b_lora_dolly"
+}
