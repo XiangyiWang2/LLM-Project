@@ -1,10 +1,6 @@
 import argparse, json, os, numpy as np, sys
 from tqdm import tqdm
-try:
-    import faiss
-except Exception as e:
-    print("FAISS 未安装：请先 `pip install faiss-cpu`", file=sys.stderr)
-    raise
+import faiss
 from sentence_transformers import SentenceTransformer
 
 def read_jsonl(p):
