@@ -42,7 +42,7 @@ def main():
         embs.append(E.astype("float32"))
     if not embs:
         raise RuntimeError("没有可编码的文本。")
-    X = np.vstack(embs)  # [N, d]
+    X = np.vstack(embs)
     d = X.shape[1]
 
 
