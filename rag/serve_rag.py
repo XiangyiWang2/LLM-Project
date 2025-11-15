@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import os, json, argparse
 from pathlib import Path
 import faiss, numpy as np
@@ -14,9 +13,9 @@ def load_index(index_dir):
     if not content:
         meta = []
     elif content.lstrip().startswith("["):
-        meta = json.loads(content)  # JSON array
+        meta = json.loads(content)
     else:
-        meta = [json.loads(line) for line in content.splitlines() if line.strip()]  # JSONL
+        meta = [json.loads(line) for line in content.splitlines() if line.strip()]
     return idx, meta
 
 def build_prompt(q, passages):
