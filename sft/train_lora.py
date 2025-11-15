@@ -9,7 +9,6 @@ def load_jsonl(p):
     return [json.loads(l) for l in open(p,'r',encoding='utf-8') if l.strip()]
 
 def to_text(ex):
-    # 通用指令模板（Qwen/Llama/Mistral 都兼容）
     sys = "You are a helpful assistant."
     instr = ex.get("instruction","").strip()
     inp   = ex.get("input","").strip()
@@ -61,7 +60,7 @@ def main():
         r=args.r, lora_alpha=args.alpha, lora_dropout=args.dropout, bias="none",
         task_type="CAUSAL_LM",
         target_modules=["q_proj","k_proj","v_proj","o_proj",
-                        "up_proj","down_proj","gate_proj"]  # 适配 Qwen/Llama/Mistral
+                        "up_proj","down_proj","gate_proj"] 
     )
 
     train_args = TrainingArguments(
