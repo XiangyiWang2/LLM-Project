@@ -27,7 +27,6 @@ def main():
             texts.append(t.strip())
 
     device = "cuda" if faiss.get_num_gpus()==0 and False else ("cuda" if os.environ.get("CUDA_VISIBLE_DEVICES","")!="" else "cpu")
-    # 更稳妥：只看 torch 是否可用 GPU
     try:
         import torch
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -46,11 +45,9 @@ def main():
     X = np.vstack(embs)  # [N, d]
     d = X.shape[1]
 
-    # 内积检索（向量已归一化，相当于余弦）
+
     index = faiss.IndexFlatIP(d)
     index.add(X)
-
-    # 保存
     faiss.write_index(index, os.path.join(args.index_dir, "faiss.index"))
     np.save(os.path.join(args.index_dir, "embeddings.npy"), X)
     with open(os.path.join(args.index_dir, "corpus.jsonl"), "w", encoding="utf-8") as f:
