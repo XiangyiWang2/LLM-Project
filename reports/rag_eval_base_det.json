@@ -1,9 +1,0 @@
-{
-  "n": 50,
-  "Recall@k": 0.84,
-  "RerankHit@r": 0.62,
-  "AnswerHit": 0.6,
-  "top_k": 20,
-  "rerank_top": 5,
-  "model": "Qwen/Qwen2.5-7B-Instruct"
-}
