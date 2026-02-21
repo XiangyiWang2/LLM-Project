@@ -1,104 +1,124 @@
-import argparse, json, torch
-from datasets import Dataset
-from transformers import (AutoModelForCausalLM, AutoTokenizer, TrainingArguments,
-                          BitsAndBytesConfig)
-from trl import SFTTrainer
-from peft import LoraConfig
+import torch
+from datasets import load_dataset
+from transformers import (
+    AutoTokenizer, 
+    AutoModelForCausalLM, 
+    TrainingArguments, 
+    Trainer, 
+    DataCollatorForSeq2Seq,
+    BitsAndBytesConfig
+)
+from peft import LoraConfig, get_peft_model, TaskType
 
-def load_jsonl(p):
-    return [json.loads(l) for l in open(p,'r',encoding='utf-8') if l.strip()]
+# --- 1. 配置参数 ---
+MODEL_ID = "Qwen/Qwen1.5-7B-Chat"
+DATA_PATH = "data/raw/dolly15k.jsonl"  # 👈 完美！直接用你本地的数据
+OUTPUT_DIR = "checkpoints/qwen_lora"
 
-def to_text(ex):
-    sys = "You are a helpful assistant."
-    instr = ex.get("instruction","").strip()
-    inp   = ex.get("input","").strip()
-    out   = ex.get("output","").strip()
-    user = instr if not inp else f"{instr}\n\nInput:\n{inp}"
-    return (f"<s>[SYSTEM]\n{sys}\n[/SYSTEM]\n"
-            f"[USER]\n{user}\n[/USER]\n[ASSISTANT]\n{out}</s>")
+# LoRA 核心参数
+LORA_R = 8
+LORA_ALPHA = 32
+LORA_DROPOUT = 0.1
 
+def format_dolly(sample):
+    """将 Alpaca 格式的数据转换为 Qwen 认识的指令格式"""
+    
+    # 1. 拿指令
+    instruction = sample.get('instruction', '')
+    
+    # 2. 拿参考资料 (你的数据里叫 'input')
+    context = sample.get('input', '')
+    
+    # 3. 拿答案 (你的数据里叫 'output')
+    response = sample.get('output', '')
+    
+    # 4. 拼装成 Qwen 喜欢的格式
+    prompt = f"### Instruction:\n{instruction}\n\n### Input:\n{context}\n\n### Response:\n"
+    
+    return {"text": prompt + response + "<|im_end|>"}
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--model', default='Qwen/Qwen2.5-7B-Instruct')
-    ap.add_argument('--data',  default='data/raw/dolly15k.jsonl')
-    ap.add_argument('--out',   default='ckpts/qwen7b_lora_dolly')
-    ap.add_argument('--epochs', type=int, default=2)
-    ap.add_argument('--seq',    type=int, default=1024)
-    ap.add_argument('--bsz',    type=int, default=1)
-    ap.add_argument('--ga',     type=int, default=32)
-    ap.add_argument('--lr',     type=float, default=1e-4)
-    ap.add_argument('--r',      type=int, default=16)
-    ap.add_argument('--alpha',  type=int, default=32)
-    ap.add_argument('--dropout',type=float, default=0.05)
-    ap.add_argument('--qlora',  action='store_true')
-    args = ap.parse_args()
+    print(f"🚀 正在加载模型: {MODEL_ID}...")
+    
+    # 1. 加载 Tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
+    tokenizer.pad_token = tokenizer.eos_token
+    
+    # 2. 4-bit 量化配置 (极其省显存的关键)
+    quantization_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_quant_type="nf4"
+    )
 
-    print("loading tokenizer/model...")
-    tok = AutoTokenizer.from_pretrained(args.model, use_fast=True, trust_remote_code=True)
-    if tok.pad_token is None: tok.pad_token = tok.eos_token
-
-    quant = None
-    if args.qlora:
-        quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type='nf4',
-                                   bnb_4bit_use_double_quant=True,
-                                   bnb_4bit_compute_dtype=torch.float16)
-
+    # 3. 加载底座模型
+    print("🧠 正在加载 4-bit 底座模型 (这可能需要几分钟)...")
     model = AutoModelForCausalLM.from_pretrained(
-        args.model,
-        
-        trust_remote_code=True,
-        torch_dtype=torch.bfloat16,
-        quantization_config=quant
-    )
-    model.config.use_cache = False
-
-    print("preparing dataset...")
-    rows = load_jsonl(args.data)
-    ds = Dataset.from_list([{"text": to_text(r)} for r in rows])
-
-    lora = LoraConfig(
-        r=args.r, lora_alpha=args.alpha, lora_dropout=args.dropout, bias="none",
-        task_type="CAUSAL_LM",
-        target_modules=["q_proj","k_proj","v_proj","o_proj",
-                        "up_proj","down_proj","gate_proj"] 
+        MODEL_ID,
+        device_map="auto",
+        quantization_config=quantization_config,
+        trust_remote_code=True
     )
 
-    train_args = TrainingArguments(
-        output_dir=args.out,
-        num_train_epochs=args.epochs,
-        per_device_train_batch_size=args.bsz,
-        gradient_accumulation_steps=args.ga,
-        learning_rate=args.lr,
-        logging_steps=20,
-        save_steps=100,
-        save_total_limit=2,
-        fp16=False,
-        bf16=(torch.cuda.is_available() and torch.cuda.is_bf16_supported()),
-        gradient_checkpointing=True,
-        max_grad_norm=1.0,
-        lr_scheduler_type="cosine",
-        warmup_ratio=0.03,
-        optim="paged_adamw_32bit" if args.qlora else "adamw_torch",
-        report_to="none"
+    # 4. 配置并挂载 LoRA 适配器
+    print("🛠️ 正在挂载 LoRA 适配器...")
+    peft_config = LoraConfig(
+        task_type=TaskType.CAUSAL_LM, 
+        inference_mode=False, 
+        r=LORA_R, 
+        lora_alpha=LORA_ALPHA, 
+        lora_dropout=LORA_DROPOUT,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"]
+    )
+    model = get_peft_model(model, peft_config)
+    
+    # 🌟 见证奇迹的时刻
+    model.print_trainable_parameters() 
+
+    # 5. 加载本地数据
+    print(f"📚 正在加载本地数据集: {DATA_PATH}...")
+    dataset = load_dataset("json", data_files=DATA_PATH, split="train")
+    
+    # 【实验阶段专用】：只取前 1000 条数据快速跑通闭环！
+    print("⚡ 抽取前 1000 条数据进行快速验证...")
+    dataset = dataset.select(range(1000)) 
+    
+    dataset = dataset.map(format_dolly)
+    
+    def process_func(example):
+        tokenized = tokenizer(example["text"], truncation=True, max_length=512, padding="max_length")
+        tokenized["labels"] = tokenized["input_ids"].copy()
+        return tokenized
+
+    print("✂️ 正在 Tokenize 数据...")
+    tokenized_ds = dataset.map(process_func, remove_columns=dataset.column_names)
+
+    # 6. 设置训练参数
+    training_args = TrainingArguments(
+        output_dir=OUTPUT_DIR,
+        per_device_train_batch_size=2, # 如果显存 OOM，改回 1
+        gradient_accumulation_steps=4,
+        learning_rate=2e-4,
+        num_train_epochs=1,
+        logging_steps=10,
+        save_strategy="epoch",
+        optim="paged_adamw_32bit",
+        fp16=True,
+        remove_unused_columns=False
     )
 
-    trainer = SFTTrainer(
+    # 7. 启动 Trainer
+    print("🔥 开始 SFT 微调...")
+    trainer = Trainer(
         model=model,
-        tokenizer=tok,
-        train_dataset=ds,
-        peft_config=lora,
-        dataset_text_field="text",
-        max_seq_length=args.seq,
-        packing=False,
-        args=train_args
+        args=training_args,
+        train_dataset=tokenized_ds,
+        data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True),
     )
 
-    print("start training...")
     trainer.train()
-    print("saving adapter...")
-    trainer.model.save_pretrained(args.out)
-    tok.save_pretrained(args.out)
-    print("done ->", args.out)
+    
+    print(f"✅ 训练完成！LoRA 权重已保存至: {OUTPUT_DIR}")
+    model.save_pretrained(OUTPUT_DIR)
 
 if __name__ == "__main__":
     main()

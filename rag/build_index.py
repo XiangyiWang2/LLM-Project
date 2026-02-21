@@ -1,63 +1,42 @@
-import argparse, json, os, numpy as np, sys
-from tqdm import tqdm
+import json
+import os
 import faiss
+import numpy as np
+from pathlib import Path
 from sentence_transformers import SentenceTransformer
-
-def read_jsonl(p):
-    with open(p,'r',encoding='utf-8') as f:
-        for line in f:
-            line=line.strip()
-            if line:
-                yield json.loads(line)
-
+corpus_file = "data/processed/corpus.jsonl"
+index_dir = "data/index"
+model_name = "BAAI/bge-m3"
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--corpus", required=True)
-    ap.add_argument("--index_dir", required=True)
-    ap.add_argument("--batch", type=int, default=512)
-    ap.add_argument("--model", default="BAAI/bge-m3")
-    args = ap.parse_args()
-
-    os.makedirs(args.index_dir, exist_ok=True)
-    docs = list(read_jsonl(args.corpus))
+    if not os.path.exists(corpus_file):
+        print(f"Can not find {corpus_file}")
+        return
+    documents = []
+    with open(corpus_file, 'r', encoding = 'utf-8') as f:
+        for line in f:
+            documents.append(json.loads(line))
     texts = []
-    for r in docs:
-        t = r.get("text")
-        if isinstance(t,str) and t.strip():
-            texts.append(t.strip())
-
-    device = "cuda" if faiss.get_num_gpus()==0 and False else ("cuda" if os.environ.get("CUDA_VISIBLE_DEVICES","")!="" else "cpu")
+    for document in documents:
+        texts.append(document['text'])
     try:
-        import torch
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    except:
-        pass
-
-    model = SentenceTransformer(args.model, device=device)
-
-    embs = []
-    for i in tqdm(range(0, len(texts), args.batch), desc="encode"):
-        batch = texts[i:i+args.batch]
-        E = model.encode(batch, batch_size=args.batch, show_progress_bar=False, normalize_embeddings=True)
-        embs.append(E.astype("float32"))
-    if not embs:
-        raise RuntimeError("没有可编码的文本。")
-    X = np.vstack(embs)
-    d = X.shape[1]
-
-
-    index = faiss.IndexFlatIP(d)
-    index.add(X)
-    faiss.write_index(index, os.path.join(args.index_dir, "faiss.index"))
-    np.save(os.path.join(args.index_dir, "embeddings.npy"), X)
-    with open(os.path.join(args.index_dir, "corpus.jsonl"), "w", encoding="utf-8") as f:
-        for r in docs:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    with open(os.path.join(args.index_dir, "meta.json"), "w", encoding="utf-8") as f:
-        json.dump({"encoder": args.model, "ntotal": int(index.ntotal), "dim": d}, f, ensure_ascii=False, indent=2)
-
-    print(f"ntotal: {index.ntotal}")
-    print(f"saved -> {args.index_dir}/faiss.index, embeddings.npy, corpus.jsonl, meta.json")
-
+        model = SentenceTransformer(model_name)
+    except Exception as e:
+        print(f"Can not download the model, {e}")
+    embeddings = model.encode(texts, batch_size = 16, show_progress_bar=True, normalize_embeddings=True)
+    embeddings = np.array(embeddings).astype('float32')
+    dimension = embeddings.shape[1]
+    index = faiss.IndexFlatIP(dimension)
+    index.add(embeddings)
+    Path(index_dir).mkdir(parents=True, exist_ok=True)
+    index_path = os.path.join(index_dir, "faiss.index")
+    faiss.write_index(index, index_path)
+    meta_path = os.path.join(index_dir, "meta.json")
+    with open(meta_path, 'w', encoding='utf-8') as f:
+        json.dump(documents, f, ensure_ascii = False, indent = 2)
+    print(f"In total we have {index.ntotal}")
 if __name__ == "__main__":
     main()
+
+
+
+            

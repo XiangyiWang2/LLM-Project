@@ -1,20 +1,2 @@
-# local env & caches
 .venv/
 __pycache__/
-*.pyc
-.vscode/
-conda-envs/
-pip-cache/
-.hf/
-hf/
-llmproject/
-tmp/
-logs/
-
-# big artifact dirs
-ckpts/
-
-# misc
-*.ipynb_checkpoints/
-.DS_Store
-!data/**

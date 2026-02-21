@@ -1,0 +1,15 @@
+100%|███████████████████████████████████████████████████████████████████████████████████████████████████| 125/125 [03:16<00:00,  1.57s/it]
+{'loss': 8.1242, 'grad_norm': 1.8986908197402954, 'learning_rate': 0.000192, 'epoch': 0.08}
+{'loss': 0.6584, 'grad_norm': 0.4329131245613098, 'learning_rate': 0.00017600000000000002, 'epoch': 0.16}
+{'loss': 0.6759, 'grad_norm': 0.3661452531814575, 'learning_rate': 0.00016, 'epoch': 0.24}
+{'loss': 0.4604, 'grad_norm': 0.16441822052001953, 'learning_rate': 0.000144, 'epoch': 0.32}
+{'loss': 0.5202, 'grad_norm': 0.23847636580467224, 'learning_rate': 0.00012800000000000002, 'epoch': 0.4}
+{'loss': 0.5621, 'grad_norm': 0.3276371955871582, 'learning_rate': 0.00011200000000000001, 'epoch': 0.48}
+{'loss': 0.4658, 'grad_norm': 0.20399144291877747, 'learning_rate': 9.6e-05, 'epoch': 0.56}
+{'loss': 0.5428, 'grad_norm': 0.3367437422275543, 'learning_rate': 8e-05, 'epoch': 0.64}
+{'loss': 0.535, 'grad_norm': 0.31509748101234436, 'learning_rate': 6.400000000000001e-05, 'epoch': 0.72}
+{'loss': 0.4869, 'grad_norm': 0.2627863585948944, 'learning_rate': 4.8e-05, 'epoch': 0.8}
+{'loss': 0.4753, 'grad_norm': 0.2941541373729706, 'learning_rate': 3.2000000000000005e-05, 'epoch': 0.88}
+{'loss': 0.7041, 'grad_norm': 0.35475966334342957, 'learning_rate': 1.6000000000000003e-05, 'epoch': 0.96}
+{'train_runtime': 199.8833, 'train_samples_per_second': 5.003, 'train_steps_per_second': 0.625, 'train_loss': 1.1625424480438233, 'epoch': 1.0}
+✅ 训练完成！LoRA 权重已保存至: checkpoints/qwen_lora

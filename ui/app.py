@@ -1,56 +1,66 @@
-import argparse, torch, gradio as gr
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import os
+import json
+import faiss
+import numpy as np
+import torch
+import gradio as gr
+from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from peft import PeftModel
-
-def load_model(model_name, peft_path=None):
-    tok = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=True)
-    dtype = torch.bfloat16 if (torch.cuda.is_available() and torch.cuda.is_bf16_supported()) else torch.float16
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name, torch_dtype=dtype, device_map="auto", trust_remote_code=True
-    )
-    if peft_path:
-        model = PeftModel.from_pretrained(model, peft_path)
-    model.eval()
-    return tok, model
-
-def generate_answer(user_text, system_text, max_new_tokens, do_sample, temperature):
-    if not user_text.strip():
-        return ""
-    msgs = [
-        {"role":"system","content":system_text or "You are a helpful assistant."},
-        {"role":"user","content":user_text}
-    ]
-    inputs = tokenizer.apply_chat_template(msgs, return_tensors="pt").to(model.device)
+INDEX_DIR = "data/index"
+EMBED_MODEL_NAME = "BAAI/bge-m3"
+LLM_ID = "Qwen/Qwen1.5-7B-Chat"
+LORA_DIR = "checkpoints/qwen_lora"
+embed_model = SentenceTransformer(EMBED_MODEL_NAME)
+index = faiss.read_index(os.path.join(INDEX_DIR, "faiss.index"))
+with open(os.path.join(INDEX_DIR, "meta.json"), 'r', encoding='utf-8') as f:
+    documents = json.load(f)
+tokenizer = AutoTokenizer.from_pretrained(LLM_ID, trust_remote_code=True)
+quantization_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)
+base_model = AutoModelForCausalLM.from_pretrained(LLM_ID, device_map="auto", quantization_config=quantization_config)
+llm = PeftModel.from_pretrained(base_model, LORA_DIR)
+def rag_inference(question, top_k, temperature):
+    q_emb = np.array(embed_model.encode([question], normalize_embeddings=True)).astype('float32')
+    D, I = index.search(q_emb, top_k) 
+    retrieved_content = ""
+    source_list = []
+    for i, idx in enumerate(I[0]):
+        doc_text = documents[idx]['text'] if isinstance(documents[idx], dict) else documents[idx]
+        source_list.append(f"【参考资料 {i+1}】\n{doc_text}")
+        retrieved_content += doc_text + "\n---\n"
+    prompt = f"### Instruction:\n{question}\n\n### Input:\n{retrieved_content}\n\n### Response:\n"
+    inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
     with torch.no_grad():
-        out = model.generate(
-            inputs,
-            max_new_tokens=int(max_new_tokens),
-            do_sample=bool(do_sample),
-            temperature=float(temperature) if do_sample else None,
-            eos_token_id=tokenizer.eos_token_id,
+        outputs = llm.generate(
+            **inputs, 
+            max_new_tokens=512, 
+            temperature=temperature,
+            do_sample=True if temperature > 0 else False,
+            pad_token_id=tokenizer.eos_token_id
         )
-    text = tokenizer.decode(out[0], skip_special_tokens=True)
-    # 简单切分拿回答
-    return text.split("assistant")[-1].strip() if "assistant" in text else text.strip()
-
+    full_res = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    answer = full_res.split("### Response:\n")[-1].strip()
+    return answer, "\n\n".join(source_list)-
+with gr.Blocks(theme=gr.themes.Soft(), title="RAG Optimization Lab") as demo:
+    gr.Markdown("# 🤖 RAG + SFT 垂直领域智能问答系统")
+    gr.Markdown("本项目由 Qwen-7B-Chat + LoRA 微调 + BGE-M3 检索增强驱动。")
+    with gr.Row():
+        with gr.Column(scale=1):
+            gr.Markdown("### ⚙️ 控制面板")
+            top_k_slider = gr.Slider(minimum=1, maximum=10, value=3, step=1, label="检索参考条数 (Top-K)")
+            temp_slider = gr.Slider(minimum=0.0, maximum=1.0, value=0.1, step=0.05, label="生成随机度 (Temperature)")
+            btn = gr.Button("🚀 提交提问", variant="primary")    
+        with gr.Column(scale=2):
+            gr.Markdown("### 💬 对话窗口")
+            question_input = gr.Textbox(label="输入您的问题", placeholder="例如：苹果是什么？", lines=2)
+            answer_output = gr.Textbox(label="Qwen 的回答", interactive=False, lines=10)        
+        with gr.Column(scale=2):
+            gr.Markdown("### 📚 检索证据链")
+            sources_output = gr.Textbox(label="检索到的参考资料原文", interactive=False, lines=15)
+    btn.click(
+        fn=rag_inference, 
+        inputs=[question_input, top_k_slider, temp_slider], 
+        outputs=[answer_output, sources_output]
+    )
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="Qwen/Qwen2.5-7B-Instruct")
-    ap.add_argument("--peft_path", default=None)
-    args = ap.parse_args()
-
-    global tokenizer, model
-    tokenizer, model = load_model(args.model, args.peft_path)
-
-    with gr.Blocks(title="LLM-Project Demo") as demo:
-        gr.Markdown("# LLM-Project Demo (Qwen2.5 + optional LoRA)")
-        sys = gr.Textbox(label="System Prompt", value="You are a helpful assistant.")
-        inp = gr.Textbox(label="User Input", lines=4, placeholder="Ask something…")
-        with gr.Row():
-            max_new = gr.Slider(32, 512, value=256, step=1, label="max_new_tokens")
-            do_sample = gr.Checkbox(value=False, label="do_sample")
-            temp = gr.Slider(0.0, 1.5, value=0.7, step=0.05, label="temperature")
-        btn = gr.Button("Generate")
-        out = gr.Textbox(label="Answer", lines=12)
-        btn.click(generate_answer, inputs=[inp, sys, max_new, do_sample, temp], outputs=out)
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(share=True, server_name="0.0.0.0")
