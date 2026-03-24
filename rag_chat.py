@@ -3,7 +3,6 @@ import json
 import faiss
 import numpy as np
 import torch
-# [修改1] 增加导入 CrossEncoder
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from peft import PeftModel
