@@ -35,7 +35,7 @@ def format_dolly(sample):
     
     return {"text": prompt + response + "<|im_end|>"}
 def main():
-    print(f"🚀 正在加载模型: {MODEL_ID}...")
+    print(f"Loading: {MODEL_ID}...")
     
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
@@ -48,7 +48,7 @@ def main():
         bnb_4bit_quant_type="nf4"
     )
 
-    # 3. 加载底座模型
+
     print("Loading 4-bit Model")
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
@@ -57,7 +57,7 @@ def main():
         trust_remote_code=True
     )
 
-    # 4. 配置并挂载 LoRA 适配器
+
     print("🛠️ 正在挂载 LoRA 适配器...")
     peft_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM, 
