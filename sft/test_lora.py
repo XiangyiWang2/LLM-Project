@@ -42,7 +42,7 @@ def main():
     response_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
     final_answer = response_text.split("### Response:\n")[-1]
 
-    print("\n🤖 【Qwen-LoRA 的回答】:")
+    print("Qwen Lora Answer:")
     print(final_answer)
 
 if __name__ == "__main__":
