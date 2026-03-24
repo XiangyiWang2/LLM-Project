@@ -58,7 +58,7 @@ def main():
     )
 
 
-    print("🛠️ 正在挂载 LoRA 适配器...")
+    print("Uploading LoRA Matrix")
     peft_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM, 
         inference_mode=False, 
